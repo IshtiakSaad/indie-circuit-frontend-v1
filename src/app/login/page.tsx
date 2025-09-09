@@ -2,25 +2,43 @@
 
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, user, loading } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    // Redirect if already logged in
+    if (user) {
+      router.push('/dashboard/' + (user.role === 'mentee' ? 'mentee' : 'mentor'));
+    }
+  }, [user, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
+    if (!email || !password) {
+      setError('Please fill all fields');
+      return;
+    }
+
     try {
+      setSubmitting(true);
       await login(email, password);
-      // Redirect based on role (fetch from AuthContext user)
-      router.push('/dashboard/mentee'); // default, or you can check role
+      // user state change triggers useEffect redirect
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'Login failed');
+    } finally {
+      setSubmitting(false);
     }
   };
+
+  if (loading) return <p className="text-center mt-10">Checking authentication...</p>;
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col space-y-4 w-full max-w-sm mx-auto mt-10">
@@ -38,8 +56,12 @@ export default function LoginPage() {
         onChange={e => setPassword(e.target.value)}
         className="p-3 border rounded"
       />
-      <button type="submit" className="bg-blue-500 text-white p-3 rounded hover:bg-blue-600">
-        Login
+      <button
+        type="submit"
+        className={`bg-blue-500 text-white p-3 rounded hover:bg-blue-600 ${submitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+        disabled={submitting}
+      >
+        {submitting ? 'Logging in...' : 'Login'}
       </button>
       {error && <p className="text-red-500">{error}</p>}
     </form>

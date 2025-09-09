@@ -44,21 +44,37 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           id: firebaseUser.uid,
           name: firebaseUser.displayName || "",
           email: firebaseUser.email || "",
-          role: 'mentee', // TODO: fetch real role from Firestore
+          role: 'mentee', // TODO: fetch real role from backend if needed
           field: '',
         });
       } else {
         setUser(null);
       }
-      setLoading(false); // ✅ Firebase check finished
+      setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
-  const login = async (email: string, password: string) => {
-    await signInWithEmailAndPassword(auth, email, password);
-  };
+    const login = async (email: string, password: string) => {
+    // Sign in with Firebase
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+
+    // Fetch the user from your backend (Postgres)
+    const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/users/${cred.user.uid}`);
+    if (!res.ok) throw new Error('Failed to fetch user from backend');
+    const backendUser = await res.json();
+
+    // Update context with backend info
+    setUser({
+        id: cred.user.uid,
+        name: cred.user.displayName || backendUser.name,
+        email: cred.user.email || backendUser.email,
+        role: backendUser.role,
+        field: backendUser.field,
+    });
+    };
+
 
   const signup = async (
     name: string,
@@ -67,8 +83,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     role: User['role'],
     field: string
   ) => {
+    // Create in Firebase
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     await updateProfile(cred.user, { displayName: name });
+    // console.log(cred);
+
+    // Create in Postgres backend
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: cred.user.uid, name, email, role, field }),
+      });
+
+      if (!response.ok) {
+        console.error('Failed to create user in backend:', await response.text());
+      }
+    } catch (err) {
+      console.error('Backend error:', err);
+    }
+
+    // Update context
     setUser({
       id: cred.user.uid,
       name,
@@ -76,6 +111,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       role,
       field,
     });
+
+    return cred;
   };
 
   const logout = async () => {
